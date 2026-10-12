@@ -1,32 +1,86 @@
 import express from 'express';
-import { protect, adminOnly } from '../middleware/auth.js';
-import {
-  getInventoryItems,
-  createRazorpayOrder,
-  verifyAndPlaceOrder,
-  getMyOrders,
-  getAllOrdersAdmin,
-  updateOrderStatus,
-  updateInventoryStock
-} from '../controllers/orderController.js';
+import mongoose from 'mongoose';
 
 const router = express.Router();
 
-// इन्व्हेंटरी
-router.get('/inventory', protect, getInventoryItems);
+const OrderSchema = new mongoose.Schema(
+  {
+    userId: { type: String, default: 'guest_user' },
+    items: [
+      {
+        name: { type: String, default: 'Custom Artisan Pizza' },
+        base: String,
+        sauce: String,
+        cheese: String,
+        veggies: [String],
+        price: Number,
+        quantity: { type: Number, default: 1 },
+      },
+    ],
+    totalAmount: { type: Number, required: true },
+    deliveryAddress: { type: String, required: true },
+    phone: { type: String, required: true },
+    status: {
+      type: String,
+      default: 'Order Received',
+      enum: ['Order Received', 'In Kitchen', 'Sent to Delivery', 'Delivered'],
+    },
+    paymentMethod: { type: String, default: 'Online' },
+    paymentStatus: { type: String, default: 'Completed' },
+  },
+  { timestamps: true }
+);
 
-// पेमेंट आणि ऑर्डर प्लेस (दोन्ही पाथ्सना सपोर्ट द्या जेणेकरून 404 येणार नाही)
-router.post('/create-order', protect, createRazorpayOrder);
-router.post('/create-payment-order', protect, createRazorpayOrder);
+const Order = mongoose.models.Order || mongoose.model('Order', OrderSchema);
 
-router.post('/verify-order', protect, verifyAndPlaceOrder);
+// GET: सर्व ऑर्डर्स मिळवणे
+router.get('/', async (req, res) => {
+  try {
+    const orders = await Order.find().sort({ createdAt: -1 });
+    res.json(orders);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// युझर ऑर्डर्स
-router.get('/my-orders', protect, getMyOrders);
+// POST: नवीन ऑर्डर तयार करणे
+router.post('/', async (req, res) => {
+  try {
+    const { items, totalAmount, deliveryAddress, phone, paymentMethod } = req.body;
 
-// ॲडमिन राऊट्स
-router.get('/admin/orders', protect, adminOnly, getAllOrdersAdmin);
-router.put('/admin/orders/:id/status', protect, adminOnly, updateOrderStatus);
-router.put('/admin/inventory/:id', protect, adminOnly, updateInventoryStock);
+    const newOrder = new Order({
+      items,
+      totalAmount,
+      deliveryAddress,
+      phone,
+      paymentMethod: paymentMethod || 'Online (Test)',
+      status: 'Order Received',
+      paymentStatus: 'Completed',
+    });
 
+    const savedOrder = await newOrder.save();
+    console.log('✅ New Order Created:', savedOrder._id);
+    res.status(201).json(savedOrder);
+  } catch (err) {
+    console.error('❌ Order Save Error:', err);
+    res.status(500).json({ error: 'Failed to create order', details: err.message });
+  }
+});
+
+// PATCH: ऑर्डर स्टेटस अपडेट करणे
+router.patch('/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    const updated = await Order.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ES Module Default Export
 export default router;
