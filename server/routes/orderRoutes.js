@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 
 const router = express.Router();
 
+// Order Schema (Enum flexible ठेवला आहे जेणेकरून कोणताही स्टेटस व्हॅलिड राहील)
 const OrderSchema = new mongoose.Schema(
   {
     userId: { type: String, default: 'guest_user' },
@@ -23,7 +24,6 @@ const OrderSchema = new mongoose.Schema(
     status: {
       type: String,
       default: 'Order Received',
-      enum: ['Order Received', 'In Kitchen', 'Sent to Delivery', 'Delivered'],
     },
     paymentMethod: { type: String, default: 'Online' },
     paymentStatus: { type: String, default: 'Completed' },
@@ -67,20 +67,38 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PATCH: ऑर्डर स्टेटस अपडेट करणे
-router.patch('/:id/status', async (req, res) => {
+// Status Update Handler (PATCH + PUT दोन्हींसाठी)
+const updateStatusHandler = async (req, res) => {
   try {
     const { status } = req.body;
+    const { id } = req.params;
+
+    if (!status) {
+      return res.status(400).json({ error: 'Status is required' });
+    }
+
     const updated = await Order.findByIdAndUpdate(
-      req.params.id,
+      id,
       { status },
       { new: true }
     );
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    console.log(`✅ Order ${id} status updated to: ${status}`);
     res.json(updated);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('❌ Status update failed:', err);
+    res.status(500).json({ error: 'Failed to update status', details: err.message });
   }
-});
+};
 
-// ES Module Default Export
+// सर्व शक्य राऊट्स सपोर्ट केले आहेत
+router.patch('/:id/status', updateStatusHandler);
+router.put('/:id/status', updateStatusHandler);
+router.patch('/:id', updateStatusHandler);
+router.put('/:id', updateStatusHandler);
+
 export default router;
